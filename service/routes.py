@@ -4,7 +4,7 @@ from service.models import Item
 
 @app.route('/')
 def index():
-    items = Item.get_all_accounts()
+    items = Item.get_all_items()
     return render_template('index.html', items=items)
 
 @app.route('/add', methods=('POST',))
@@ -17,7 +17,7 @@ def add_item():
 
 @app.route('/edit/<int:id>', methods=('GET', 'POST'))
 def edit_item(id):
-    item = Item.find_account_by_id(int(id))
+    item = Item.find_item_by_id(int(id))
     if request.method == 'POST':
         item.text = request.form.get('text')
         item.update_db()
@@ -26,7 +26,7 @@ def edit_item(id):
 
 @app.route('/delete/<int:id>')
 def delete_item(id):
-    item = Item.find_account_by_id(int(id))
+    item = Item.find_item_by_id(int(id))
     item.delete_from_db()
     return redirect(url_for('index'))
 

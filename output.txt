@@ -1,46 +1,42 @@
 {
-"docker-compose.yml": """version: '3.9'
+"test_models.py": """from service import app
+from service.models import Item, db
+import pytest
 
-services:
-  db:
-    image: postgres:13
-    container_name: postgres_db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydatabase
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - app_network
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
-  flask:
-    build: service
-    container_name: flask_app
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "5000:5000"
-    networks:
-      - app_network
-    environment:
-      - FLASK_APP=routes.py
-      - FLASK_ENV=development
+@pytest.fixture(scope='module')
+def setup_database():
+    """ This fixture sets up an in-memory SQLite db for testing. """
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    app.config['TESTING'] = True
+    app.config['DEBUG'] = False
+    #Item.init_db(app)
 
-networks:
-  app_network:
-    driver: bridge
+    with app.app_context():
+        db.create_all()  # Create all tables
 
-volumes:
-  postgres_data:
+    yield app
+
+    with app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
+@pytest.fixture
+def client(setup_database):
+    """ This provides a test client for Flask to simulate HTTP requests. """
+    with setup_database.test_client() as client:
+        yield client
+
+
+def test_create_item():
+    """ This should create a new Item. """
+    text = 8 * 'a'
+    item = Item(text=text)
+
+    assert item is not None
+    assert item.id is None
+    assert text == item.text
 """,
 "models.py": """from flask_sqlalchemy import SQLAlchemy
 
@@ -74,7 +70,7 @@ class PersistentBase:
         """ Finds a record by its ID """
         return cls.query.get(by_id)
 
-    def add(self):
+    def add_to_db(self):
         """
         Creates an Item and adds it to the database
         """
@@ -82,13 +78,13 @@ class PersistentBase:
         db.session.add(self)
         db.session.commit()
 
-    def update(self):
+    def update_db(self):
         """
         Updates an Item in the database
         """
         db.session.commit()
 
-    def delete(self):
+    def delete_from_db(self):
         """ Removes an Item from the database """
         db.session.delete(self)
         db.session.commit()
@@ -137,7 +133,7 @@ def edit_item(id):
 @app.route('/delete/<int:id>')
 def delete_item(id):
     item = Item.find_account_by_id(int(id))
-    item.delete()
+    item.delete_from_db()
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
@@ -151,18 +147,26 @@ Tree Structure:
 ├── docker-compose.yml
 ├── output.txt
 ├── __pycache__
-└── service
-    ├── Dockerfile
+├── requirements.txt
+├── run.txt
+├── service
+│   ├── Dockerfile
+│   ├── __init__.py
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── routes.cpython-312.pyc
+│   ├── requirements.txt
+│   ├── routes.py
+│   └── templates
+│       ├── edit.html
+│       └── index.html
+└── tests
     ├── __init__.py
-    ├── models.py
     ├── __pycache__
     │   ├── __init__.cpython-312.pyc
-    │   ├── models.cpython-312.pyc
-    │   └── routes.cpython-312.pyc
-    ├── requirements.txt
-    ├── routes.py
-    └── templates
-        ├── edit.html
-        └── index.html
+    │   └── test_models.cpython-312-pytest-8.3.3.pyc
+    └── test_models.py
 
-5 directories, 13 files
+7 directories, 19 files

@@ -20,13 +20,13 @@ class PersistentBase:
             db.create_all()
 
     @classmethod
-    def get_all_accounts(cls):
+    def get_all_items(cls):
         """ Returns all the records in the database """
         return cls.query.all()
 
 
     @classmethod
-    def find_account_by_id(cls, by_id):
+    def find_item_by_id(cls, by_id):
         """ Finds a record by its ID """
         return cls.query.get(by_id)
 

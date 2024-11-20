@@ -1,0 +1,14 @@
+# Run server and client
+PYTHONPATH=src
+PYTHONPATH=src python3 -m src.server.server
+
+# Run the grpc tools
+python -m grpc_tools.protoc -I=. --python_out=. --grpc_python_out=. proto/minitwitter.proto
+
+-I=.:                   Specifies the directory with .proto files.
+--python_out=.:         Where to place generated Python protobuf code.
+--grpc_python_out=.:    Where to place generated gRPC code.
+
+# Run tests
+PYTHONPATH=src pytest --cov=src
+export PYTHONPATH=src:$PYTHONPATH
