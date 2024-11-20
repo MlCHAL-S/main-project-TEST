@@ -15,18 +15,24 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - app_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   flask:
-    build: ./app
+    build: service
     container_name: flask_app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "5000:5000"
     networks:
       - app_network
     environment:
-      - FLASK_APP=app.py
+      - FLASK_APP=routes.py
       - FLASK_ENV=development
 
 networks:
@@ -36,55 +42,102 @@ networks:
 volumes:
   postgres_data:
 """,
-"app.py": """from flask import Flask, render_template, request, redirect, url_for
-from flask_sqlalchemy import SQLAlchemy
-import time
+"models.py": """from flask_sqlalchemy import SQLAlchemy
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:password@db:5432/mydatabase'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
 
-# Model for the database
-class Item(db.Model):
+db = SQLAlchemy()
+
+def init_db(app):
+    """ Initialize the SQLAlchemy app """
+    Item.init_db(app)
+
+class PersistentBase:
+    def __init__(self):
+        self.id = None
+
+    @classmethod
+    def init_db(cls, app):
+        """ Initializes the database session """
+        cls.app = app
+        db.init_app(app)
+        with app.app_context():
+            db.create_all()
+
+    @classmethod
+    def get_all_accounts(cls):
+        """ Returns all the records in the database """
+        return cls.query.all()
+
+
+    @classmethod
+    def find_account_by_id(cls, by_id):
+        """ Finds a record by its ID """
+        return cls.query.get(by_id)
+
+    def add(self):
+        """
+        Creates an Item and adds it to the database
+        """
+        self.id = None  # id must be none to generate next primary key
+        db.session.add(self)
+        db.session.commit()
+
+    def update(self):
+        """
+        Updates an Item in the database
+        """
+        db.session.commit()
+
+    def delete(self):
+        """ Removes an Item from the database """
+        db.session.delete(self)
+        db.session.commit()
+
+
+class Item(db.Model, PersistentBase):
+    """
+    Class for Item
+    """
+    app = None
+
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(200), nullable=False)
 
-# Ensure that PostgreSQL is ready before starting Flask
-time.sleep(10)
+    def __repr__(self):
+        return f'<Item {self.text}, id: {self.id}>'
 
-# Create the database tables inside the app context
-with app.app_context():
-    db.create_all()  # This will create the database if it doesn't exist
+
+""",
+"routes.py": """from flask import render_template, request, redirect, url_for
+from . import app
+from service.models import Item
 
 @app.route('/')
 def index():
-    items = Item.query.all()
+    items = Item.get_all_accounts()
     return render_template('index.html', items=items)
 
-@app.route('/add', methods=['POST'])
+@app.route('/add', methods=('POST',))
 def add_item():
     text = request.form.get('text')
     if text:
-        new_item = Item(text=text)
-        db.session.add(new_item)
-        db.session.commit()
+        item = Item(text=text)
+        item.add_to_db()
     return redirect(url_for('index'))
 
-@app.route('/edit/<int:id>', methods=['GET', 'POST'])
+@app.route('/edit/<int:id>', methods=('GET', 'POST'))
 def edit_item(id):
-    item = Item.query.get(id)
+    item = Item.find_account_by_id(int(id))
     if request.method == 'POST':
         item.text = request.form.get('text')
-        db.session.commit()
+        item.update_db()
         return redirect(url_for('index'))
     return render_template('edit.html', item=item)
 
 @app.route('/delete/<int:id>')
 def delete_item(id):
-    item = Item.query.get(id)
-    db.session.delete(item)
-    db.session.commit()
+    item = Item.find_account_by_id(int(id))
+    item.delete()
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
@@ -95,15 +148,21 @@ if __name__ == '__main__':
 Tree Structure:
 .
 ├── all_files.py
-├── app
-│   ├── app.py
-│   ├── Dockerfile
-│   ├── __init__.py
-│   ├── requirements.txt
-│   └── templates
-│       ├── edit.html
-│       └── index.html
 ├── docker-compose.yml
-└── __pycache__
+├── output.txt
+├── __pycache__
+└── service
+    ├── Dockerfile
+    ├── __init__.py
+    ├── models.py
+    ├── __pycache__
+    │   ├── __init__.cpython-312.pyc
+    │   ├── models.cpython-312.pyc
+    │   └── routes.cpython-312.pyc
+    ├── requirements.txt
+    ├── routes.py
+    └── templates
+        ├── edit.html
+        └── index.html
 
-4 directories, 8 files
+5 directories, 13 files
