@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask CRUD App</title>
+</head>
+<body>
+    <form action="/add" method="POST">
+        <input type="text" id="text" name="text" placeholder="Enter text" required>
+        <button id="index-submit-btn" type="submit">Add</button>
+    </form>
+
+    <h2>Items</h2>
+    <ul>
+        {% for item in items %}
+            <li>
+                {{ item.text }}
+                <a id="index-edit-btn" href="/edit/{{ item.id }}">Edit</a>
+                <a id="index-delete-button" href="/delete/{{ item.id }}">Delete</a>
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

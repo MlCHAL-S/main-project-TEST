@@ -1,0 +1,109 @@
+{
+"docker-compose.yml": """version: '3.9'
+
+services:
+  db:
+    image: postgres:13
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydatabase
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
+  flask:
+    build: ./app
+    container_name: flask_app
+    depends_on:
+      - db
+    ports:
+      - "5000:5000"
+    networks:
+      - app_network
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+""",
+"app.py": """from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+import time
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:password@db:5432/mydatabase'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Model for the database
+class Item(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(200), nullable=False)
+
+# Ensure that PostgreSQL is ready before starting Flask
+time.sleep(10)
+
+# Create the database tables inside the app context
+with app.app_context():
+    db.create_all()  # This will create the database if it doesn't exist
+
+@app.route('/')
+def index():
+    items = Item.query.all()
+    return render_template('index.html', items=items)
+
+@app.route('/add', methods=['POST'])
+def add_item():
+    text = request.form.get('text')
+    if text:
+        new_item = Item(text=text)
+        db.session.add(new_item)
+        db.session.commit()
+    return redirect(url_for('index'))
+
+@app.route('/edit/<int:id>', methods=['GET', 'POST'])
+def edit_item(id):
+    item = Item.query.get(id)
+    if request.method == 'POST':
+        item.text = request.form.get('text')
+        db.session.commit()
+        return redirect(url_for('index'))
+    return render_template('edit.html', item=item)
+
+@app.route('/delete/<int:id>')
+def delete_item(id):
+    item = Item.query.get(id)
+    db.session.delete(item)
+    db.session.commit()
+    return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+"""
+}
+
+Tree Structure:
+.
+├── all_files.py
+├── app
+│   ├── app.py
+│   ├── Dockerfile
+│   ├── __init__.py
+│   ├── requirements.txt
+│   └── templates
+│       ├── edit.html
+│       └── index.html
+├── docker-compose.yml
+└── __pycache__
+
+4 directories, 8 files
