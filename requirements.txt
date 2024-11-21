@@ -4,3 +4,7 @@ factory-boy
 faker
 behave
 selenium
+pylint
+flask
+Flask-SQLAlchemy
+psycopg2-binary
