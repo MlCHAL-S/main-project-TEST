@@ -1,5 +1,5 @@
 from service.models import Item
-from tests.unit_test.factories import ItemFactory
+from tests.unit_tests.factories import ItemFactory
 
 
 def test_create_an_item():

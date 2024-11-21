@@ -2,3 +2,5 @@ pytest
 pytest-cov
 factory-boy
 faker
+behave
+selenium

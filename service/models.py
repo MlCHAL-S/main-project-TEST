@@ -48,5 +48,3 @@ class Item(db.Model, PersistentBase):
 
     def __repr__(self):
         return f'<Item {self.text}, id: {self.id}>'
-
-
