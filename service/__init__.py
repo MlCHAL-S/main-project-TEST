@@ -6,7 +6,7 @@ from .routes import main
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(config.DevelopmentConfig)
+    app.config.from_object(config.TestingConfig)
 
     db.init_app(app)
 
