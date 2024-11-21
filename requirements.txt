@@ -4,3 +4,4 @@ factory-boy
 faker
 behave
 selenium
+pylint

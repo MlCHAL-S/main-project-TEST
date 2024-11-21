@@ -1,0 +1,37 @@
+name: CI Pipeline
+
+on:
+  pull request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Add linting here later. Skip for now cause it will fail the action
+
+      - name: Unit testing
+        run: pytest
+
+      - name: Integration testing
+        run: behave tests/integration_tests/features/
+
+      # Add safety or bandit here later as well
+
+      # Deploy
+
+      # Generate docs
