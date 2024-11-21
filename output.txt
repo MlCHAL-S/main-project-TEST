@@ -1,42 +1,120 @@
 {
+"conftest.py": """import pytest
+from service import app as flask_app
+from service.models import db, init_db, Item
+
+
+@pytest.fixture(scope="module")
+def test_app():
+    """Create and configure a new app instance for each test module."""
+    flask_app.config["TESTING"] = True
+    flask_app.config["DEBUG"] = False
+    flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    init_db(flask_app)
+
+    yield flask_app
+
+@pytest.fixture(scope="module")
+def client(test_app):
+    """A test client for the app."""
+    return test_app.test_client()
+
+@pytest.fixture(scope="function", autouse=True)
+def db_session():
+    """Creates a new database session for a test."""
+    db.session.remove()
+    db.drop_all()
+    db.create_all()
+    yield db.session
+    db.session.remove()""",
+"test_routes.py": """import pytest
+from tests.unit_test.factories import ItemFactory
+from service.models import db, Item, init_db
+from service.routes import app
+
+
+def test_index(client):
+    """ This should get 200_OK from the Index Page. """
+    response = client.get('/')
+    assert response.status_code == 200
+""",
 "test_models.py": """from service import app
 from service.models import Item, db
-import pytest
+from tests.unit_test.factories import ItemFactory
 
 
-@pytest.fixture(scope='module')
-def setup_database():
-    """ This fixture sets up an in-memory SQLite db for testing. """
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    app.config['TESTING'] = True
-    app.config['DEBUG'] = False
-    #Item.init_db(app)
-
-    with app.app_context():
-        db.create_all()  # Create all tables
-
-    yield app
-
-    with app.app_context():
-        db.session.remove()
-        db.drop_all()
-
-
-@pytest.fixture
-def client(setup_database):
-    """ This provides a test client for Flask to simulate HTTP requests. """
-    with setup_database.test_client() as client:
-        yield client
-
-
-def test_create_item():
-    """ This should create a new Item. """
-    text = 8 * 'a'
-    item = Item(text=text)
+def test_create_an_item():
+    """ It should Create an Item and assert that it exists. """
+    fake_item = ItemFactory()
+    item = Item(text=fake_item.text)
 
     assert item is not None
     assert item.id is None
-    assert text == item.text
+    assert item.text == fake_item.text
+
+
+def test_add_an_item(db_session):
+    """ It should add an Item to the database. """
+    items = Item.get_all_items()
+    assert len(items) == 0
+
+    fake_item = ItemFactory()
+    fake_item.add_to_db()
+
+    assert fake_item.id is not None
+    items = Item.get_all_items()
+    assert len(items) == 1
+
+def test_get_all_items(db_session):
+    items = Item.get_all_items()
+    assert len(items) == 0
+
+    fake_items = [ItemFactory() for _ in range(3)]
+    for item in fake_items:
+        item.add_to_db()
+
+    items = Item.get_all_items()
+    assert len(items) == 3
+""",
+"factories.py": """import factory
+from service.models import Item
+
+class ItemFactory(factory.Factory):
+    """ Factory for creating fake Items. """
+
+    class Meta:
+        model = Item
+
+
+    id = factory.Sequence(lambda n: n)
+    text = factory.Faker('sentence', nb_words=4)
+""",
+"config.py": """class Config:
+    """ Base configuration class with default settings. """
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SECRET_KEY = 'your_secret_key'  # You might want to change this in production
+    JSON_SORT_KEYS = False  # Optional, to prevent automatic key sorting in JSON responses
+
+class DevelopmentConfig(Config):
+    """ Development configuration with PostgreSQL database. """
+    ENV = 'development'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:password@db:5432/mydatabase'
+    DEBUG = True
+
+class TestingConfig(Config):
+    """ Testing configuration with SQLite in-memory database. """
+    ENV = 'testing'
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    TESTING = True
+    DEBUG = False
+
+class ProductionConfig(Config):
+    """ Production configuration with PostgreSQL database. """
+    ENV = 'production'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:password@db:5432/mydatabase'
+    DEBUG = False
 """,
 "models.py": """from flask_sqlalchemy import SQLAlchemy
 
@@ -44,7 +122,7 @@ def test_create_item():
 db = SQLAlchemy()
 
 def init_db(app):
-    """ Initialize the SQLAlchemy app """
+    """ Initialize the SQLAlchemy app. """
     Item.init_db(app)
 
 class PersistentBase:
@@ -53,26 +131,26 @@ class PersistentBase:
 
     @classmethod
     def init_db(cls, app):
-        """ Initializes the database session """
+        """ Initializes the database session. """
         cls.app = app
         db.init_app(app)
         with app.app_context():
             db.create_all()
 
     @classmethod
-    def get_all_accounts(cls):
-        """ Returns all the records in the database """
+    def get_all_items(cls):
+        """ Returns all the records in the database. """
         return cls.query.all()
 
 
     @classmethod
-    def find_account_by_id(cls, by_id):
+    def find_item_by_id(cls, by_id):
         """ Finds a record by its ID """
         return cls.query.get(by_id)
 
     def add_to_db(self):
         """
-        Creates an Item and adds it to the database
+        Creates an Item and adds it to the database.
         """
         self.id = None  # id must be none to generate next primary key
         db.session.add(self)
@@ -80,19 +158,19 @@ class PersistentBase:
 
     def update_db(self):
         """
-        Updates an Item in the database
+        Updates an Item in the database.
         """
         db.session.commit()
 
     def delete_from_db(self):
-        """ Removes an Item from the database """
+        """ Removes an Item from the database. """
         db.session.delete(self)
         db.session.commit()
 
 
 class Item(db.Model, PersistentBase):
     """
-    Class for Item
+    Class for Item.
     """
     app = None
 
@@ -110,7 +188,7 @@ from service.models import Item
 
 @app.route('/')
 def index():
-    items = Item.get_all_accounts()
+    items = Item.get_all_items()
     return render_template('index.html', items=items)
 
 @app.route('/add', methods=('POST',))
@@ -123,7 +201,7 @@ def add_item():
 
 @app.route('/edit/<int:id>', methods=('GET', 'POST'))
 def edit_item(id):
-    item = Item.find_account_by_id(int(id))
+    item = Item.find_item_by_id(int(id))
     if request.method == 'POST':
         item.text = request.form.get('text')
         item.update_db()
@@ -132,7 +210,7 @@ def edit_item(id):
 
 @app.route('/delete/<int:id>')
 def delete_item(id):
-    item = Item.find_account_by_id(int(id))
+    item = Item.find_item_by_id(int(id))
     item.delete_from_db()
     return redirect(url_for('index'))
 
@@ -147,13 +225,17 @@ Tree Structure:
 ├── docker-compose.yml
 ├── output.txt
 ├── __pycache__
+├── pytest
+├── pytest.ini
 ├── requirements.txt
 ├── run.txt
 ├── service
+│   ├── config.py
 │   ├── Dockerfile
 │   ├── __init__.py
 │   ├── models.py
 │   ├── __pycache__
+│   │   ├── config.cpython-312.pyc
 │   │   ├── __init__.cpython-312.pyc
 │   │   ├── models.cpython-312.pyc
 │   │   └── routes.cpython-312.pyc
@@ -163,10 +245,21 @@ Tree Structure:
 │       ├── edit.html
 │       └── index.html
 └── tests
+    ├── conftest.py
     ├── __init__.py
     ├── __pycache__
+    │   ├── conftest.cpython-312-pytest-8.3.3.pyc
     │   ├── __init__.cpython-312.pyc
     │   └── test_models.cpython-312-pytest-8.3.3.pyc
-    └── test_models.py
+    └── unit_test
+        ├── factories.py
+        ├── __init__.py
+        ├── __pycache__
+        │   ├── factories.cpython-312.pyc
+        │   ├── __init__.cpython-312.pyc
+        │   ├── test_models.cpython-312-pytest-8.3.3.pyc
+        │   └── test_routes.cpython-312-pytest-8.3.3.pyc
+        ├── test_models.py
+        └── test_routes.py
 
-7 directories, 19 files
+9 directories, 32 files

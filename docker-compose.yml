@@ -19,7 +19,7 @@ services:
       retries: 5
 
   flask:
-    build: ./service
+    build: .
     container_name: flask_app
     depends_on:
       db:
@@ -29,7 +29,7 @@ services:
     networks:
       - app_network
     environment:
-      - FLASK_APP=routes.py
+      - FLASK_APP=service:create_app
       - FLASK_ENV=development
 
 networks:
