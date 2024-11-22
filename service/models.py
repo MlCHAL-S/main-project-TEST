@@ -14,7 +14,7 @@ class PersistentBase:
 
     @classmethod
     def find_item_by_id(cls, by_id):
-        """ Finds a record by its ID """
+        """ Finds a record by its ID. """
         return cls.query.get(by_id)
 
     def add_to_db(self):
@@ -48,3 +48,9 @@ class Item(db.Model, PersistentBase):
 
     def __repr__(self):
         return f'<Item {self.text}, id: {self.id}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'text': self.text,
+        }
