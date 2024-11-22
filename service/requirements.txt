@@ -2,3 +2,5 @@ flask
 psycopg2-binary
 Flask-SQLAlchemy
 redis
+flask-talisman
+flask-cors

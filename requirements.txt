@@ -9,3 +9,5 @@ flask
 Flask-SQLAlchemy
 psycopg2-binary
 redis
+flask-talisman
+flask-cors
