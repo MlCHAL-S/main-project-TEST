@@ -13,7 +13,7 @@ def before_all(context):
     options.add_argument("--headless=new")
 
                                         # /snap/bin/geckodriver
-    service = Service(executable_path='/usr/local/bin/geckodriver')
+    service = Service(executable_path='/snap/bin/geckodriver')
     context.driver = webdriver.Firefox(service=service, options=options)
     context.driver.implicitly_wait(context.wait_seconds)
 
