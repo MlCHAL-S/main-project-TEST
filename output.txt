@@ -1,0 +1,469 @@
+{
+"docker-compose.yml": """services:
+  db:
+    image: postgres:13
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydatabase
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  flask:
+    build: .
+    container_name: flask_app
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    networks:
+      - app_network
+    environment:
+      - FLASK_APP=service:create_app
+      - FLASK_ENV=development
+
+  redis:
+    image: redis:latest
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+""",
+"conftest.py": """import pytest
+from service import create_app, db
+from service.extensions import redis_client
+from unittest.mock import Mock
+from service.extensions import talisman
+
+
+@pytest.fixture()
+def app():
+    app = create_app(config_name='testing')
+
+    redis_client.get = Mock(return_value=None)  # Mock `get` to return `None`
+    redis_client.set = Mock()  # Mock `set` to do nothing
+    redis_client.delete = Mock()
+
+    talisman.force_https = False
+
+    yield app
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+""",
+"test_routes.py": """
+def test_index(client):
+    """ This should get 200_OK from the Index Page. """
+    response = client.get('/')
+    assert response.status_code == 200
+""",
+"test_models.py": """from service.models import Item
+from tests.unit_tests.factories import ItemFactory
+
+
+def test_create_an_item():
+    """ It should Create an Item and assert that it exists. """
+    fake_item = ItemFactory()
+    item = Item(text=fake_item.text)
+
+    assert item is not None
+    assert item.id is None
+    assert item.text == fake_item.text
+
+
+def test_add_an_item(app):
+    """ It should add an Item to the database. """
+    with app.app_context():
+        items = Item.get_all_items()
+        assert len(items) == 0
+
+        fake_item = ItemFactory()
+        fake_item.add_to_db()
+
+        assert fake_item.id is not None
+        items = Item.get_all_items()
+        assert len(items) == 1
+
+def test_get_all_items(app):
+    """ This should get all items from the database. """
+    with app.app_context():
+        items = Item.get_all_items()
+        assert len(items) == 0
+
+        fake_items = [ItemFactory() for _ in range(3)]
+        for item in fake_items:
+            item.add_to_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 3
+
+def test_get_item_by_id(app):
+    """ This should get a single item by its ID. """
+    with app.app_context():
+        fake_items = [ItemFactory() for _ in range(3)]
+        for item in fake_items:
+            item.add_to_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 3
+
+        item = Item.find_item_by_id(fake_items[1].id)
+        assert item.id == fake_items[1].id
+
+def test_add_to_db(app):
+    """ This should add a new Item to the db. """
+    with app.app_context():
+        items = Item.get_all_items()
+        assert len(items) == 0
+
+        fake_item = ItemFactory()
+        fake_item.add_to_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 1
+
+def test_update_db(app):
+    """ This should update an Item in the db. """
+    with app.app_context():
+        fake_item = ItemFactory()
+        fake_item.add_to_db()
+
+        fake_item.text = 'Updated Text'
+        fake_item.update_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 1
+        assert items[0].text == 'Updated Text'
+
+def test_delete_from_db(app):
+    """ This should delete an Item from the db. """
+    with app.app_context():
+        fake_item = ItemFactory()
+        fake_item.add_to_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 1
+
+        fake_item.delete_from_db()
+
+        items = Item.get_all_items()
+        assert len(items) == 0
+
+def test_repr(app):
+    """ This should test printing an object. """
+    with app.app_context():
+        item = Item(text='hello')
+        item.add_to_db()
+        expected_repr = f'<Item hello, id: 1>'
+        assert repr(item) == expected_repr
+""",
+"factories.py": """import factory
+from service.models import Item
+
+class ItemFactory(factory.Factory):
+    """ Factory for creating fake Items. """
+
+    class Meta:
+        model = Item
+
+
+    id = factory.Sequence(lambda n: n)
+    text = factory.Faker('sentence', nb_words=4)
+""",
+"environment.py": """from selenium import webdriver
+from selenium.webdriver.firefox.service import Service
+
+
+WAIT_SECONDS = 10
+
+def before_all(context):
+    """ Executed once before all tests. """
+    context.base_url = 'http://localhost:5000'
+    context.wait_seconds = WAIT_SECONDS
+
+    options = webdriver.FirefoxOptions()
+    options.add_argument("--headless=new")
+
+                                        # /snap/bin/geckodriver
+    service = Service(executable_path='/snap/bin/geckodriver')
+    context.driver = webdriver.Firefox(service=service, options=options)
+    context.driver.implicitly_wait(context.wait_seconds)
+
+
+def after_all(context):
+    """ Executed after all tests. """
+    context.driver.quit()
+""",
+"tutorial.py": """from behave import given, when, then
+from selenium.webdriver.common.by import By
+
+
+@given(u'the app is running')
+def step_impl(context):
+    context.driver.get(context.base_url)
+
+
+
+
+@given(u'I navigate to the Home Page')
+def step_impl(context):
+    context.driver.get(context.base_url)
+    body = context.driver.find_element(By.TAG_NAME, "body")
+    assert "Items" in body.text
+
+
+@given(u'I enter "{text}" in the input')
+def step_impl(context, text):
+    input_box = context.driver.find_element(By.ID, "text")
+    input_box.clear()
+    input_box.send_keys(text)
+
+
+@when(u'I press the "Submit" button')
+def step_impl(context):
+    submit_button = context.driver.find_element(By.ID, "index-submit-btn")
+    submit_button.click()
+
+
+@then(u'I should see "{text}" on the web page')
+def step_impl(context, text):
+    body = context.driver.find_element(By.TAG_NAME, "body")
+    assert text in body.text
+
+@then('close the browser')
+def step_impl(context):
+    context.driver.quit()""",
+"config.py": """import os
+
+class Config:
+    """Base configuration class with default settings."""
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'default_secret_key')  # Load from env, fallback for dev
+    JSON_SORT_KEYS = False  # Optional, prevents automatic key sorting in JSON responses
+
+class DevelopmentConfig(Config):
+    """Development configuration."""
+    ENV = 'development'
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DEV_DATABASE_URI', 'postgresql://postgres:password@db:5432/mydatabase'
+    )
+    DEBUG = True
+
+class TestingConfig(Config):
+    """Testing configuration."""
+    ENV = 'testing'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URI', 'sqlite:///:memory:')
+    TESTING = True
+    DEBUG = False
+
+class ProductionConfig(Config):
+    """Production configuration."""
+    ENV = 'production'
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DATABASE_URI', 'postgresql://postgres:password@db:5432/mydatabase'
+    )
+    DEBUG = False
+    SECRET_KEY = os.environ.get('SECRET_KEY')  # Ensure SECRET_KEY is mandatory in production
+
+# for easier mapping
+config_by_name = {
+    'development': DevelopmentConfig,
+    'testing': TestingConfig,
+    'production': ProductionConfig
+}
+""",
+"models.py": """from service.extensions import db
+
+
+class PersistentBase:
+    def __init__(self):
+        self.id = None
+
+
+    @classmethod
+    def get_all_items(cls):
+        """ Returns all the records in the database. """
+        return cls.query.all()
+
+
+    @classmethod
+    def find_item_by_id(cls, by_id):
+        """ Finds a record by its ID. """
+        return cls.query.get(by_id)
+
+    def add_to_db(self):
+        """
+        Creates an Item and adds it to the database.
+        """
+        self.id = None  # id must be none to generate next primary key
+        db.session.add(self)
+        db.session.commit()
+
+    def update_db(self):
+        """
+        Updates an Item in the database.
+        """
+        db.session.commit()
+
+    def delete_from_db(self):
+        """ Removes an Item from the database. """
+        db.session.delete(self)
+        db.session.commit()
+
+
+class Item(db.Model, PersistentBase):
+    """
+    Class for Item.
+    """
+    app = None
+
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(200), nullable=False)
+
+    def __repr__(self):
+        return f'<Item {self.text}, id: {self.id}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'text': self.text,
+        }
+""",
+"routes.py": """from flask import Blueprint, render_template, request, redirect, url_for
+from .models import Item
+from .extensions import redis_client
+import json
+
+
+main = Blueprint('main', __name__)
+
+@main.route('/')
+def index():
+    items = redis_client.get('items_list')
+    if items is None:
+        items = [item.to_dict() for item in Item.get_all_items()]
+        redis_client.set('items_list', json.dumps(items), ex=60)
+    else:
+        items = json.loads(items)
+    return render_template('index.html', items=items)
+
+@main.route('/add', methods=('POST',))
+def add_item():
+    text = request.form.get('text')
+    if text:
+        item = Item(text=text)
+        item.add_to_db()
+        redis_client.delete('items_list')
+    return redirect(url_for('main.index'))
+
+@main.route('/edit/<int:id>', methods=('GET', 'POST'))
+def edit_item(id):
+    item = Item.find_item_by_id(int(id))
+    if request.method == 'POST':
+        item.text = request.form.get('text')
+        item.update_db()
+
+        items = redis_client.get('items_list')
+        if items:
+            items = json.loads(items)
+            for cached_item in items:
+                if cached_item['id'] == id:
+                    cached_item['text'] = item.text
+                    break
+            redis_client.set('items_list', json.dumps(items), ex=60)
+        return redirect(url_for('main.index'))
+    return render_template('edit.html', item=item)
+
+@main.route('/delete/<int:id>')
+def delete_item(id):
+    item = Item.find_item_by_id(int(id))
+    item.delete_from_db()
+    redis_client.delete('items_list')
+    return redirect(url_for('main.index'))
+""",
+"extensions.py": """from flask_sqlalchemy import SQLAlchemy
+import redis
+from flask_talisman import Talisman
+from flask_cors import CORS
+
+db = SQLAlchemy()
+redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
+talisman = Talisman()
+cors = CORS()
+"""
+}
+
+Tree Structure:
+.
+├── all_files.py
+├── docker-compose.yml
+├── Dockerfile
+├── output.txt
+├── __pycache__
+├── pytest.ini
+├── requirements.txt
+├── run.txt
+├── service
+│   ├── config.py
+│   ├── extensions.py
+│   ├── __init__.py
+│   ├── models.py
+│   ├── __pycache__
+│   │   ├── config.cpython-312.pyc
+│   │   ├── extensions.cpython-312.pyc
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── models.cpython-312.pyc
+│   │   └── routes.cpython-312.pyc
+│   ├── requirements.txt
+│   ├── routes.py
+│   └── templates
+│       ├── edit.html
+│       └── index.html
+└── tests
+    ├── conftest.py
+    ├── __init__.py
+    ├── integration_tests
+    │   ├── features
+    │   │   ├── environment.py
+    │   │   ├── __init__.py
+    │   │   ├── steps
+    │   │   │   ├── __init__.py
+    │   │   │   └── tutorial.py
+    │   │   └── tutorial.feature
+    │   └── __init__.py
+    ├── __pycache__
+    │   ├── conftest.cpython-312-pytest-8.3.3.pyc
+    │   ├── __init__.cpython-312.pyc
+    │   └── test_models.cpython-312-pytest-8.3.3.pyc
+    └── unit_tests
+        ├── factories.py
+        ├── __init__.py
+        ├── __pycache__
+        │   ├── factories.cpython-312.pyc
+        │   ├── __init__.cpython-312.pyc
+        │   ├── test_models.cpython-312-pytest-8.3.3.pyc
+        │   └── test_routes.cpython-312-pytest-8.3.3.pyc
+        ├── test_models.py
+        └── test_routes.py
+
+12 directories, 39 files
