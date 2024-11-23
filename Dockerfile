@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 WORKDIR /service
 COPY service/requirements.txt .
@@ -12,4 +12,4 @@ ENV FLASK_APP=service:create_app
 ENV FLASK_ENV=development
 
 # Command to run the Flask app
-CMD ["flask", "--app", "service", "run", "--host=0.0.0.0", "--port=5000", "--debug"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "service:create_app()"]
